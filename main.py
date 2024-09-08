@@ -1,33 +1,15 @@
 import pygame as pg
-from math import sqrt
-from random import choice, uniform
+import numpy as np
 
+colors = ((255, 0, 0), (0, 255, 0), (0, 0, 255))
+attraction_table = np.random.random((len(colors), len(colors))) * 2 - 1
 
-class Vector:
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
+win_size = 800
 
-    def __add__(self, other):
-        return Vector(self.x + other.x, self.y + other.y)
+pg.init()
+screen = pg.display.set_mode((win_size, win_size))
 
-    def __sub__(self, other):
-        return Vector(self.x - other.x, self.y - other.y)
-
-    def __mul__(self, other):
-        return Vector(self.x * other, self.y * other)
-
-    def __rmul__(self, other):
-        return Vector(self.x * other, self.y * other)
-
-    def get_tuple(self):
-        return self.x, self.y
-
-    def get_mag(self):
-        return sqrt(self.x**2 + self.y**2)
-
-    def get_normalised(self):
-        return self * (1 / self.get_mag())
+show_debug = False
 
 
 class Particle:
@@ -36,93 +18,115 @@ class Particle:
         self.vel = vel
         self.col = col
 
-        self.old_acc = Vector(0, 0)
-        self.acc = Vector(0, 0)
+        self.size = 2
+        self.r_max = self.size * 50
 
-        self.size = 5
-        self.r_max = 100
+    def draw(self):
+        if show_debug:
+            pg.draw.circle(screen, (0, 0, 0, 0), self.pos, self.r_max, 2)
 
-    def draw(self, screen):
-        pg.draw.circle(screen, self.col, self.pos.get_tuple(), self.size)
+        pg.draw.circle(screen, colors[self.col], self.pos, self.size)
 
-    def update_pos(self, dt, screen_size):
-        self.pos += self.vel * dt + 0.5 * self.acc * dt * dt
+    def update_pos(self, dt):
+        self.pos += self.vel * dt
 
-        if self.pos.x > screen_size:
-            self.pos.x = 0
-        elif self.pos.x < 0:
-            self.pos.x = screen_size
+        if self.pos[0] > win_size:
+            self.pos[0] = win_size
+            self.vel[0] *= -1
+        elif self.pos[0] < 0:
+            self.pos[0] = 0
+            self.vel[0] *= -1
 
-        if self.pos.y > screen_size:
-            self.pos.y = 0
-        elif self.pos.y < 0:
-            self.pos.y = screen_size
+        if self.pos[1] > win_size:
+            self.pos[1] = win_size
+            self.vel[1] *= -1
+        elif self.pos[1] < 0:
+            self.pos[1] = 0
+            self.vel[1] *= -1
 
     def compute_acc(self, other):
-        dist = (other.pos - self.pos).get_mag()
-        direction = (other.pos - self.pos).get_normalised()
+        dist = np.linalg.norm(other.pos - self.pos) + self.size / 10
+        direction = (other.pos - self.pos) * (1 / dist)
 
-        close_thresh = self.size * 3
+        close_thresh = self.size * 15
 
         attraction = 0
+        attraction_factor = attraction_table[self.col][other.col]
+        mp = (self.r_max + close_thresh) / 2
+
         if dist < close_thresh:
-            attraction = (1 / close_thresh) * dist + (-1)
-        elif dist < (self.r_max + close_thresh) / 2:
-            pass
+            attraction = (dist / close_thresh) - 1
+        elif dist < mp:
+            attraction = (attraction_factor / (mp - close_thresh)) * (
+                dist - close_thresh
+            )
+        elif dist < mp * 2:
+            attraction = attraction_factor - (
+                (attraction_factor / (self.r_max - mp)) * (dist - mp)
+            )
 
-        return direction * attraction
+        if show_debug and dist < mp * 2:
+            c = 255 * abs(attraction_factor)
+            pg.draw.line(screen, (c, c, c), self.pos, other.pos, 1)
 
-    def update_acc(self, particles):
-        self.old_acc = self.acc
-        self.acc = Vector(0, 0)
+        return direction * attraction * 10
+
+    def update_vel(self, particles, dt):
+        acc = np.array([0.0, 0.0])
 
         for p in particles:
             if p is not self:
-                self.acc += self.compute_acc(p)
+                acc += self.compute_acc(p)
 
-        self.vel += (self.old_acc + self.acc) * 0.5 * dt
+        mu = 0.7
+        self.vel = self.vel * mu + acc * dt
 
 
-if __name__ == "__main__":
-    win_size = 800
+running = True
+dt = 0.2
 
-    pg.init()
-    screen = pg.display.set_mode((win_size, win_size))
-    clock = pg.time.Clock()
+particles = []
 
-    running = True
-    dt = 0.1
 
-    particles = []
-    colors = ((255, 0, 0), (0, 255, 0), (0, 0, 255))
+while running:
+    screen.fill((0, 0, 0))
 
-    while running:
-        screen.fill((0, 0, 0))
+    for event in pg.event.get():
+        if event.type == pg.QUIT:
+            running = False
 
-        for event in pg.event.get():
-            if event.type == pg.QUIT:
-                running = False
+        if event.type == pg.MOUSEBUTTONDOWN:
+            pos = np.array(pg.mouse.get_pos(), np.float64)
 
-            if event.type == pg.MOUSEBUTTONDOWN:
-                pos = pg.mouse.get_pos()
-                particles.append(
-                    Particle(
-                        Vector(*pos),
-                        Vector(uniform(-1, 1), uniform(-1, 1)),
-                        choice(colors),
+            r = 50
+            col = np.random.randint(0, len(colors))
+
+            for r in range(50, 0, -20):
+                for angle in range(0, 360, 20):
+                    particles.append(
+                        Particle(
+                            pos
+                            + r
+                            * np.array(
+                                [
+                                    np.cos(angle * np.pi / 180),
+                                    np.sin(angle * np.pi / 180),
+                                ]
+                            ),
+                            np.array([0.0, 0.0]),
+                            col,
+                        )
                     )
-                )
 
-        for particle in particles:
-            particle.update_pos(dt, win_size)
+        if event.type == pg.KEYDOWN:
+            if event.key == pg.K_SPACE:
+                show_debug = not show_debug
 
-        for particle in particles:
-            particle.update_acc(particles)
-            particle.draw(screen)
+    for particle in particles:
+        particle.update_pos(dt)
+        particle.update_vel(particles, dt)
+        particle.draw()
 
-        clock.tick()
-        dt = 100 / clock.get_fps() if clock.get_fps() != 0 else dt
+    pg.display.update()
 
-        pg.display.update()
-
-    pg.quit()
+pg.quit()

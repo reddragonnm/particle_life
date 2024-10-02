@@ -10,8 +10,6 @@ pg.init()
 screen = pg.display.set_mode((win_size, win_size))
 clock = pg.time.Clock()
 
-show_debug = False
-
 
 class Boundary:
     def __init__(self, center, half_dim):
@@ -107,24 +105,6 @@ class QuadTree:
 
         return particles_in_range
 
-    def draw(self, screen):
-        pg.draw.rect(
-            screen,
-            (0, 100, 125),
-            (
-                *(self.boundary.center - self.boundary.half_dim),
-                self.boundary.half_dim * 2,
-                self.boundary.half_dim * 2,
-            ),
-            2,
-        )
-
-        if self.nw is not None:
-            self.nw.draw(screen)
-            self.ne.draw(screen)
-            self.sw.draw(screen)
-            self.se.draw(screen)
-
     def clear(self):
         self.nw = None
         self.ne = None
@@ -142,7 +122,7 @@ class Particle:
         self.vel = vel
         self.col = col
 
-        self.size = 2
+        self.size = 1
         self.r_max = self.size * 50
 
     def draw(self):
@@ -169,7 +149,7 @@ class Particle:
         dist = np.linalg.norm(other.pos - self.pos) + self.size / 10
         direction = (other.pos - self.pos) * (1 / dist)
 
-        close_thresh = self.size * 15
+        close_thresh = self.size * 20
 
         attraction = 0
         attraction_factor = attraction_table[self.col][other.col]
@@ -188,10 +168,10 @@ class Particle:
 
         return direction * attraction * 10
 
-    def update_vel(self, particles, dt):
+    def update_vel(self, dt):
         acc = np.array([0.0, 0.0])
 
-        for p in particles:
+        for p in quad.query(Boundary(self.pos, self.r_max)):
             if p is not self:
                 acc += self.compute_acc(p)
 
@@ -239,25 +219,17 @@ while running:
 
                     quad.insert(p)
 
-        if event.type == pg.KEYDOWN:
-            if event.key == pg.K_SPACE:
-                show_debug = not show_debug
-
     quad.clear()
     for p in particles:
         quad.insert(p)
 
-    quad.draw(screen)
-
     for particle in particles:
         particle.update_pos(dt)
-        particle.update_vel(particles, dt)
+        particle.update_vel(dt)
         particle.draw()
 
-    if show_debug:
-        clock.tick()
-        pg.display.set_caption(f"FPS: {int(clock.get_fps())}")
-
+    clock.tick()
+    pg.display.set_caption(f"FPS: {int(clock.get_fps())}")
     pg.display.update()
 
 pg.quit()
